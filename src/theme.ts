@@ -1,4 +1,4 @@
-// Design tokens copiados do protótipo do Figma (DescarteTech)
+
 export const C = {
   G: '#4CAF50', // Forest Green (primária)
   G_DARK: '#388E3C',
@@ -16,7 +16,7 @@ export const C = {
   GRAY_LT: '#F5F5F5',
 } as const;
 
-// Fonte Inter (carregada em App.tsx com @expo-google-fonts/inter)
+
 export const F = {
   reg: 'Inter_400Regular',
   med: 'Inter_500Medium',

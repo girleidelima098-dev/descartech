@@ -1,19 +1,11 @@
-import { useEffect, useState } from 'react';
 import { getPoints } from '../services/api';
 import { Point } from '../types';
+import { useLive } from './useLive';
+
+const EMPTY: Point[] = [];
+
 
 export function usePoints() {
-  const [points, setPoints] = useState<Point[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let alive = true;
-    getPoints()
-      .then((p) => alive && setPoints(p))
-      .catch(() => {})
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return { points, loading };
+  const { data, loading } = useLive(getPoints, EMPTY);
+  return { points: data, loading };
 }

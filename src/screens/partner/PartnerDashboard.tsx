@@ -2,51 +2,45 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import DeleteAccountButton from '../../components/DeleteAccountButton';
 import { Btn, useTopPad } from '../../components/ui';
 import { requestPartnerPickup } from '../../services/api';
 import { C, F } from '../../theme';
-import { AppUser } from '../../types';
+import { AppUser, Point } from '../../types';
+import { MATERIAL_COLORS, MATERIALS } from '../../utils/materials';
 import ScannerScreen from './ScannerScreen';
 
-const MAX_KG = 50;
-const PARTNER_POINT_ID = 1; 
-const MATERIALS = [
-  { label: 'Pilhas/Baterias', kg: 16, color: C.G },
-  { label: 'Telas/Monitores', kg: 11, color: '#66BB6A' },
-  { label: 'Cabos/Fios', kg: 8, color: C.ORANGE },
-  { label: 'Pequenos Eletrônicos', kg: 6, color: C.SLATE_LT },
-];
-const USED_KG = MATERIALS.reduce((sum, m) => sum + m.kg, 0); // 41 kg
-const PCT = Math.round((USED_KG / MAX_KG) * 100);
-const CRITICAL = PCT >= 80;
-const BAR_COLOR = CRITICAL ? C.RED : PCT >= 60 ? C.ORANGE : C.G;
+const PERIOD = { morning: 'Manhã (08h–12h)', afternoon: 'Tarde (13h–18h)' } as const;
 
-const METRICS = [
-  { label: 'Pessoas Atendidas', value: '328', detail: '+18 este mês', color: C.G },
-  { label: 'Volume Coletado', value: `${USED_KG} kg`, detail: `de ${MAX_KG} kg de capacidade`, color: C.ORANGE },
-  { label: 'Cupons Usados', value: '214', detail: '43% validados', color: C.G_DARK },
-  { label: 'Cupons Disponíveis', value: '500', detail: 'campanha atual', color: C.SLATE_LT },
-];
-
-export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; onLogout: () => void }) {
+/** Tela de Operação: tudo aqui vem do ecoponto cadastrado na Gestão e dos descartes dos clientes (ao vivo). */
+export default function PartnerDashboard({ point: p, user, onLogout, onManage }: { point: Point; user?: AppUser; onLogout: () => void; onManage: () => void }) {
   const top = useTopPad(4);
   const [requested, setRequested] = useState(false);
   const [sending, setSending] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
-  const company = user?.fullName ?? 'Fast Shop Centro';
+
+  const pct = p.fill;
+  const critical = pct >= 80;
+  const barColor = critical ? C.RED : pct >= 60 ? C.ORANGE : C.G;
+  const remaining = p.offer ? Math.max(0, p.offer.quantity - p.couponsIssued) : 0;
+  const usedRate = p.couponsIssued > 0 ? Math.round((p.couponsUsed / p.couponsIssued) * 100) : 0;
+  const co2 = Math.round(p.lifetimeKg * 2.4); // estimativa: ~2,4 kg de CO₂ evitados por kg reciclado
+
+  const metrics = [
+    { label: 'Pessoas Atendidas', value: String(p.served), detail: 'descartes confirmados', color: C.G },
+    { label: 'Volume Coletado', value: `${p.usedKg} kg`, detail: `de ${p.capacityKg} kg de capacidade`, color: C.ORANGE },
+    { label: 'Cupons Disponíveis', value: String(remaining), detail: p.offer ? `de ${p.offer.quantity} disponibilizados` : 'configure na Gestão', color: C.SLATE_LT },
+    { label: 'Cupons Utilizados', value: String(p.couponsUsed), detail: p.couponsIssued ? `${usedRate}% dos emitidos` : 'nenhum emitido ainda', color: C.G_DARK },
+  ];
 
   async function request() {
     setError('');
     setSending(true);
-    try {
-      await requestPartnerPickup({ partnerName: company, pointId: PARTNER_POINT_ID, usedKg: USED_KG, maxKg: MAX_KG });
-      setRequested(true);
-    } catch {
-      setError('Não foi possível enviar o alerta. Tente novamente.');
-    } finally {
-      setSending(false);
-    }
+    const r = await requestPartnerPickup();
+    setSending(false);
+    if (r.ok) setRequested(true);
+    else setError(r.message);
   }
 
   if (scanning) return <ScannerScreen onBack={() => setScanning(false)} />;
@@ -56,8 +50,8 @@ export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; o
       <LinearGradient colors={[C.SLATE, '#455A64']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ paddingHorizontal: 20, paddingTop: top + 8, paddingBottom: 20 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: F.semi, fontSize: 12, color: C.WHITE, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.6 }}>Empresa Parceira</Text>
-            <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 20, color: C.WHITE, marginTop: 2 }}>{company}</Text>
+            <Text style={{ fontFamily: F.semi, fontSize: 12, color: C.WHITE, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.6 }}>Empresa Parceira · Operação</Text>
+            <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 20, color: C.WHITE, marginTop: 2 }}>{p.name || user?.fullName}</Text>
           </View>
           <Pressable onPress={onLogout} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.14)' }}>
             <Text style={{ fontFamily: F.semi, fontSize: 12, color: C.WHITE }}>Sair</Text>
@@ -73,13 +67,25 @@ export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; o
             <Text style={{ fontFamily: F.med, fontSize: 12, color: C.WHITE }}>Em funcionamento</Text>
           </View>
         </View>
+        {!!p.address && <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.WHITE, opacity: 0.7, marginTop: 8 }}>{p.address} · {p.city}</Text>}
       </LinearGradient>
 
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+        {p.items.length === 0 && (
+          <Pressable onPress={onManage} style={s.setup}>
+            <Ionicons name="alert-circle" size={22} color={C.ORANGE} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: F.bold, fontSize: 13, color: '#795548' }}>Cadastre os materiais aceitos</Text>
+              <Text style={{ fontFamily: F.reg, fontSize: 12, color: '#795548' }}>Os clientes veem essa lista ao pesquisar seu ecoponto. Toque para abrir a Gestão.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#795548" />
+          </Pressable>
+        )}
+
         <View>
           <Text style={[s.label, { marginBottom: 12 }]}>Visão geral</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            {METRICS.map((m) => (
+            {metrics.map((m) => (
               <View key={m.label} style={[s.card, { width: '47.8%', padding: 14, borderRadius: 16 }]}>
                 <View style={{ width: 28, height: 4, borderRadius: 2, backgroundColor: m.color, marginBottom: 12 }} />
                 <Text style={{ fontFamily: F.xbold, fontSize: 20, color: C.SLATE }}>{m.value}</Text>
@@ -94,26 +100,38 @@ export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; o
           <Text style={s.label}>Capacidade do Ecoponto</Text>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 8 }}>
             <Text style={{ fontFamily: F.xbold, fontSize: 28, color: C.SLATE }}>
-              {USED_KG} kg <Text style={{ fontFamily: F.med, fontSize: 14, color: C.MUTED }}>de {MAX_KG} kg</Text>
+              {p.usedKg} kg <Text style={{ fontFamily: F.med, fontSize: 14, color: C.MUTED }}>de {p.capacityKg} kg</Text>
             </Text>
-            <Text style={{ fontFamily: F.bold, fontSize: 16, color: BAR_COLOR }}>{PCT}%</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 16, color: barColor }}>{pct}%</Text>
           </View>
           <View style={{ height: 14, borderRadius: 7, overflow: 'hidden', backgroundColor: '#F1F3F4', marginTop: 12 }}>
-            <View style={{ height: '100%', width: `${PCT}%`, borderRadius: 7, backgroundColor: BAR_COLOR }} />
+            <View style={{ height: '100%', width: `${pct}%`, borderRadius: 7, backgroundColor: barColor }} />
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
             <Text style={s.tick}>0 kg</Text>
-            <Text style={s.tick}>{MAX_KG / 2} kg</Text>
-            <Text style={s.tick}>{MAX_KG} kg</Text>
+            <Text style={s.tick}>{Math.round(p.capacityKg / 2)} kg</Text>
+            <Text style={s.tick}>{p.capacityKg} kg</Text>
           </View>
 
-          {CRITICAL && (
+          {critical && !p.collection && (
             <View style={s.critical}>
               <Ionicons name="warning" size={20} color={C.RED} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: F.bold, fontSize: 13, color: C.RED }}>Atenção crítica</Text>
                 <Text style={{ fontFamily: F.reg, fontSize: 12, color: '#795548', marginTop: 2 }}>
-                  Restam apenas {MAX_KG - USED_KG} kg de espaço. Solicite a retirada o quanto antes.
+                  Restam apenas {Math.max(0, Math.round((p.capacityKg - p.usedKg) * 10) / 10)} kg de espaço. Solicite a retirada o quanto antes.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {p.collection && (
+            <View style={s.scheduled}>
+              <Ionicons name="car-outline" size={20} color={C.G_DARK} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: F.bold, fontSize: 13, color: C.G_DARK }}>Retirada agendada</Text>
+                <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.G_DARK, marginTop: 2 }}>
+                  {p.collection.coopName} · {PERIOD[p.collection.period]} · placa {p.collection.plate}
                 </Text>
               </View>
             </View>
@@ -121,9 +139,9 @@ export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; o
 
           <View style={{ marginTop: 16, gap: 8 }}>
             <Btn
-              label={requested ? 'Alerta enviado à cooperativa' : sending ? 'Enviando…' : 'Solicitar retirada à cooperativa'}
+              label={p.collection ? 'Retirada já agendada' : requested ? 'Alerta enviado à cooperativa' : sending ? 'Enviando…' : 'Solicitar retirada à cooperativa'}
               onPress={request}
-              disabled={requested || sending}
+              disabled={!!p.collection || requested || sending || p.usedKg === 0}
             />
             {!!error && <Text style={{ fontFamily: F.semi, fontSize: 12, color: C.RED, textAlign: 'center' }}>{error}</Text>}
             {/* Adição ao protótipo: leitor de QR Code (câmera) para validar descartes */}
@@ -135,19 +153,19 @@ export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; o
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <View>
               <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.SLATE }}>Distribuição de Materiais</Text>
-              <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, marginTop: 2 }}>Volume por categoria (teto de {MAX_KG} kg)</Text>
+              <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, marginTop: 2 }}>Volume por categoria (teto de {p.capacityKg} kg)</Text>
             </View>
-            <Text style={{ fontFamily: F.bold, fontSize: 12, color: C.G }}>{USED_KG} kg</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 12, color: C.G }}>{p.usedKg} kg</Text>
           </View>
           <View style={{ gap: 14 }}>
             {MATERIALS.map((m) => (
-              <View key={m.label} style={{ gap: 6 }}>
+              <View key={m} style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontFamily: F.med, fontSize: 12, color: C.SLATE }}>{m.label}</Text>
-                  <Text style={{ fontFamily: F.bold, fontSize: 12, color: C.SLATE }}>{m.kg} kg</Text>
+                  <Text style={{ fontFamily: F.med, fontSize: 12, color: C.SLATE }}>{m}</Text>
+                  <Text style={{ fontFamily: F.bold, fontSize: 12, color: C.SLATE }}>{p.materials[m]} kg</Text>
                 </View>
                 <View style={{ height: 10, borderRadius: 5, backgroundColor: '#F1F3F4', overflow: 'hidden' }}>
-                  <View style={{ height: '100%', width: `${(m.kg / MAX_KG) * 100}%`, borderRadius: 5, backgroundColor: m.color }} />
+                  <View style={{ height: '100%', width: `${Math.min(100, (p.materials[m] / p.capacityKg) * 100)}%`, borderRadius: 5, backgroundColor: MATERIAL_COLORS[m] }} />
                 </View>
               </View>
             ))}
@@ -163,16 +181,14 @@ export default function PartnerDashboard({ user, onLogout }: { user?: AppUser; o
             <View style={{ flex: 1 }}>
               <Text style={{ fontFamily: F.bold, fontSize: 12, color: C.WHITE, opacity: 0.85, textTransform: 'uppercase', letterSpacing: 0.6 }}>Impacto ESG e Sustentabilidade</Text>
               <Text style={{ fontFamily: F.bold, fontSize: 16, color: C.WHITE, marginTop: 4, lineHeight: 22 }}>
-                Você já evitou 98 kg de CO₂ e atraiu 86 novos clientes sustentáveis.
+                Você já evitou {co2} kg de CO₂ e atraiu {p.served} {p.served === 1 ? 'cliente sustentável' : 'clientes sustentáveis'}.
               </Text>
-              <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.WHITE, opacity: 0.75, marginTop: 8 }}>Impacto calculado nos últimos 90 dias</Text>
+              <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.WHITE, opacity: 0.75, marginTop: 8 }}>Estimativa a partir de {p.lifetimeKg} kg coletados</Text>
             </View>
           </View>
         </LinearGradient>
 
-        <Pressable onPress={onLogout} style={s.logout}>
-          <Text style={{ fontFamily: F.semi, fontSize: 14, color: C.RED }}>Sair da conta</Text>
-        </Pressable>
+        <DeleteAccountButton onDeleted={onLogout} extra="Seu ecoponto será removido do mapa e os cupons emitidos por ele deixam de valer." />
       </ScrollView>
     </View>
   );
@@ -182,6 +198,7 @@ const s = StyleSheet.create({
   card: { backgroundColor: C.WHITE, borderWidth: 1.5, borderColor: C.BORDER },
   label: { fontFamily: F.bold, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase', color: C.MUTED },
   tick: { fontFamily: F.reg, fontSize: 10, color: C.MUTED },
+  setup: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14, backgroundColor: C.AMBER_LT, borderWidth: 1, borderColor: '#FFE082' },
   critical: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginTop: 16, padding: 12, borderRadius: 12, backgroundColor: C.RED_LT, borderWidth: 1, borderColor: 'rgba(229,57,53,0.3)' },
-  logout: { paddingVertical: 14, borderRadius: 12, borderWidth: 2, borderColor: C.RED, alignItems: 'center' },
+  scheduled: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginTop: 16, padding: 12, borderRadius: 12, backgroundColor: C.G_LIGHT },
 });

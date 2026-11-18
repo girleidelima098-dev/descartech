@@ -34,7 +34,7 @@ export default function MapTab({ points, onOpenDetail }: { points: Point[]; onOp
     mapRef.current?.animateToRegion({ latitude: c.latitude, longitude: c.longitude, latitudeDelta: delta, longitudeDelta: delta }, 700);
   }
 
-  // Localização do usuário (expo-location)
+
   async function useMyLocation(silent = false) {
     setMsg('');
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -54,7 +54,7 @@ export default function MapTab({ points, onOpenDetail }: { points: Point[]; onOp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Busca por cidade/endereço (Google Maps / geocodificador)
+
   async function runSearch(text: string) {
     const q = text.trim();
     if (!q) return;
@@ -89,16 +89,16 @@ export default function MapTab({ points, onOpenDetail }: { points: Point[]; onOp
   );
 
   const sorted = useMemo(() => {
-    const rows = filtered.map((p) => ({ p, km: origin ? distanceKm(origin.coords, p) : null }));
-    if (origin) rows.sort((a, b) => (a.km ?? 0) - (b.km ?? 0));
+    const rows = filtered.map((p) => ({ p, km: origin && p.lat != null && p.lng != null ? distanceKm(origin.coords, { lat: p.lat, lng: p.lng }) : null }));
+    if (origin) rows.sort((a, b) => (a.km ?? Infinity) - (b.km ?? Infinity));
     return rows;
   }, [filtered, origin]);
 
-  const nearby = origin ? sorted.filter((r) => (r.km ?? 0) <= RADIUS_KM) : sorted;
+  const nearby = origin ? sorted.filter((r) => r.km != null && r.km <= RADIUS_KM) : sorted;
   const fallback = !!origin && nearby.length === 0;
   const list = fallback ? sorted.slice(0, 5) : nearby;
 
-  // Sugestões enquanto digita: cidades que têm ecopontos e ecopontos pelo nome
+ 
   const suggestions = useMemo<Suggestion[]>(() => {
     const n = normalize(query.trim());
     if (n.length < 2) return [];
@@ -125,6 +125,11 @@ export default function MapTab({ points, onOpenDetail }: { points: Point[]; onOp
     setFocused(false);
     setMsg('');
     setQuery(s.title);
+    if (s.p.lat == null || s.p.lng == null) {
+      setQuery(s.title);
+      runSearch(s.p.city || s.title);
+      return;
+    }
     const c = { latitude: s.p.lat, longitude: s.p.lng };
     setOrigin({ coords: c, label: s.p.city });
     if (s.kind === 'point') {
@@ -139,7 +144,7 @@ export default function MapTab({ points, onOpenDetail }: { points: Point[]; onOp
   function pickPin(p: Point) {
     setSelectedId(p.id);
     setFocused(false);
-    if (!list.some((r) => r.p.id === p.id)) {
+    if (!list.some((r) => r.p.id === p.id) && p.lat != null && p.lng != null) {
       const c = { latitude: p.lat, longitude: p.lng };
       setOrigin({ coords: c, label: p.city });
       fly(c, 0.3);
@@ -249,12 +254,12 @@ export default function MapTab({ points, onOpenDetail }: { points: Point[]; onOp
               strokeWidth={1.5}
             />
           )}
-          {filtered.map((p) => {
+          {filtered.filter((p) => p.lat != null && p.lng != null).map((p) => {
             const sel = p.id === selectedId;
             return (
               <Marker
                 key={p.id}
-                coordinate={{ latitude: p.lat, longitude: p.lng }}
+                coordinate={{ latitude: p.lat as number, longitude: p.lng as number }}
                 onPress={() => pickPin(p)}
                 zIndex={sel ? 10 : 1}
                 anchor={{ x: 0.5, y: 0.5 }}

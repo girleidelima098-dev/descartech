@@ -5,7 +5,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../theme';
 
-/** Equivalente ao "pt-12" do protótipo (48px, que inclui a barra de status). */
+
 export function useTopPad(extra = 12) {
   return useSafeAreaInsets().top + extra;
 }

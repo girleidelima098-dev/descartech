@@ -2,29 +2,50 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
+import { Btn } from '../../components/ui';
+import { confirmDisposal } from '../../services/api';
 import { C, F } from '../../theme';
 
 const STEPS = ['Código verificado', 'Checklist validado', 'Item conferido', 'Emitir cupom'];
-const DONE = 3;
+const DONE = 3; 
 
-export default function WaitingScreen({ onDone }: { onDone: () => void }) {
+export default function WaitingScreen({ token, onDone, onBack }: { token: string; onDone: () => void; onBack: () => void }) {
   const [dots, setDots] = useState(0);
+  const [error, setError] = useState('');
   const spin = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const loop = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 2000, easing: Easing.linear, useNativeDriver: true }));
     loop.start();
     const d = setInterval(() => setDots((v) => (v + 1) % 4), 600);
-    // TODO: trocar este timer por polling no back-end (ex.: GET /disposals/:id/status)
-    const t = setTimeout(onDone, 5000);
+    let alive = true;
+    
+    Promise.all([confirmDisposal(token), new Promise((r) => setTimeout(r, 4000))]).then(([res]) => {
+      if (!alive) return;
+      if (res.ok) onDone();
+      else setError(res.message);
+    });
     return () => {
+      alive = false;
       loop.stop();
       clearInterval(d);
-      clearTimeout(t);
     };
-  }, [onDone, spin]);
+  }, [token, onDone, spin]);
 
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  if (error) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.BG, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 20 }}>
+        <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.RED_LT, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="alert-circle" size={40} color={C.RED} />
+        </View>
+        <Text style={{ fontFamily: F.bold, fontSize: 18, color: C.SLATE, textAlign: 'center' }}>Não foi possível confirmar</Text>
+        <Text style={{ fontFamily: F.med, fontSize: 14, color: C.MUTED, textAlign: 'center' }}>{error}</Text>
+        <Btn label="Voltar ao mapa" onPress={onBack} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: C.BG, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 32 }}>

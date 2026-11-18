@@ -7,10 +7,10 @@ import { createDisposal } from '../../services/api';
 import { C, F } from '../../theme';
 import { Disposal, Point } from '../../types';
 
-export default function QRScreen({ point, items, onClose, onConfirm }: { point: Point; items: string[]; onClose: () => void; onConfirm: () => void }) {
+export default function QRScreen({ point, items, onClose, onConfirm }: { point: Point; items: string[]; onClose: () => void; onConfirm: (token: string) => void }) {
   const top = useTopPad();
   const [disposal, setDisposal] = useState<Disposal | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState('');
   const [secs, setSecs] = useState(900);
 
   useEffect(() => {
@@ -21,7 +21,7 @@ export default function QRScreen({ point, items, onClose, onConfirm }: { point: 
         setDisposal(d);
         setSecs(Math.max(0, Math.round((d.expiresAt - Date.now()) / 1000)));
       })
-      .catch(() => alive && setFailed(true));
+      .catch((e: unknown) => alive && setFailed(e instanceof Error ? e.message : 'Não foi possível gerar o código.'));
     return () => {
       alive = false;
     };
@@ -54,7 +54,7 @@ export default function QRScreen({ point, items, onClose, onConfirm }: { point: 
               <QRCode value={disposal.token} size={164} color={C.G} backgroundColor="#F5F5F5" />
             ) : (
               <View style={{ width: 164, height: 164, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontFamily: F.med, fontSize: 12, color: C.MUTED }}>{failed ? 'Não foi possível gerar o código.' : 'Gerando código…'}</Text>
+                <Text style={{ fontFamily: F.med, fontSize: 12, color: C.MUTED }}>{failed || 'Gerando código…'}</Text>
               </View>
             )}
           </View>
@@ -80,7 +80,7 @@ export default function QRScreen({ point, items, onClose, onConfirm }: { point: 
       </ScrollView>
 
       <View style={{ paddingHorizontal: 20, paddingVertical: 20 }}>
-        <Btn label="Confirmar Entrega ao Atendente" onPress={onConfirm} disabled={!disposal || secs === 0} />
+        <Btn label="Confirmar Entrega ao Atendente" onPress={() => disposal && onConfirm(disposal.token)} disabled={!disposal || secs === 0} />
       </View>
     </View>
   );

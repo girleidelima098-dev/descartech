@@ -5,21 +5,17 @@ import { BackBtn, Btn, useTopPad } from '../../components/ui';
 import { requestCollection } from '../../services/api';
 import { C, F } from '../../theme';
 import { Point } from '../../types';
+import { MATERIAL_COLORS, MATERIALS } from '../../utils/materials';
 
 const PERIODS = [
   { id: 'morning', label: 'Manhã', sub: '08h – 12h' },
   { id: 'afternoon', label: 'Tarde', sub: '13h – 18h' },
 ] as const;
-const BATCH = [
-  ['Monitores', '12 unidades'],
-  ['Smartphones', '45 unidades'],
-  ['Notebooks', '8 unidades'],
-  ['Cabos e acessórios', '8 caixas'],
-];
 
 const PLATE_RE = /^[A-Z]{3}\d[A-Z0-9]\d{2}$/;
 
-export default function DispatchScreen({ point: p, onBack, onScheduled }: { point: Point; onBack: () => void; onScheduled?: () => void }) {
+/** `point` vem ao vivo: se o parceiro ou um cliente alterar o ponto, o lote muda aqui na hora. */
+export default function DispatchScreen({ point: p, coopName, onBack }: { point: Point; coopName: string; onBack: () => void }) {
   const top = useTopPad();
   const [plate, setPlate] = useState('');
   const [period, setPeriod] = useState<(typeof PERIODS)[number]['id']>('afternoon');
@@ -28,19 +24,16 @@ export default function DispatchScreen({ point: p, onBack, onScheduled }: { poin
   const [error, setError] = useState('');
   const plateOk = PLATE_RE.test(plate);
   const periodInfo = PERIODS.find((x) => x.id === period)!;
+  const collected = MATERIALS.filter((m) => p.materials[m] > 0);
+  const barColor = p.fill > 80 ? C.RED : p.fill > 50 ? C.ORANGE : C.G;
 
   async function confirm() {
     setError('');
     setSending(true);
-    try {
-      await requestCollection({ pointId: p.id, plate, period });
-      onScheduled?.();
-      setConfirmed(true);
-    } catch {
-      setError('Não foi possível enviar a ordem. Tente novamente.');
-    } finally {
-      setSending(false);
-    }
+    const r = await requestCollection({ pointId: p.id, plate, period, coopName });
+    setSending(false);
+    if (r.ok) setConfirmed(true);
+    else setError(r.message);
   }
 
   if (confirmed) {
@@ -51,7 +44,7 @@ export default function DispatchScreen({ point: p, onBack, onScheduled }: { poin
         </View>
         <View style={{ alignItems: 'center' }}>
           <Text style={{ fontFamily: F.bold, fontSize: 20, color: C.SLATE }}>Coleta Confirmada!</Text>
-          <Text style={{ fontFamily: F.med, fontSize: 14, color: C.MUTED, marginTop: 8, textAlign: 'center' }}>O veículo chegará no período selecionado.</Text>
+          <Text style={{ fontFamily: F.med, fontSize: 14, color: C.MUTED, marginTop: 8, textAlign: 'center' }}>O parceiro já foi avisado da retirada.</Text>
         </View>
         <View style={[s.card, { width: '100%', gap: 8 }]}>
           <Text style={s.label}>Resumo da coleta</Text>
@@ -60,7 +53,7 @@ export default function DispatchScreen({ point: p, onBack, onScheduled }: { poin
           <View style={{ height: 1, backgroundColor: C.BORDER, marginVertical: 4 }} />
           <Row k="Veículo (placa)" v={plate} />
           <Row k="Período" v={`${periodInfo.label} (${periodInfo.sub})`} />
-          <Row k="Peso estimado" v="450 kg" />
+          <Row k="Peso estimado" v={`${p.usedKg} kg`} />
         </View>
         <Btn label="Voltar ao Painel" onPress={onBack} />
       </View>
@@ -79,25 +72,45 @@ export default function DispatchScreen({ point: p, onBack, onScheduled }: { poin
           <Text style={[s.label, { marginBottom: 8 }]}>Ponto de Coleta</Text>
           <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.SLATE }}>{p.name}</Text>
           <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, marginTop: 2 }}>{p.address} · {p.city}</Text>
-          <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, marginTop: 2 }}>{p.hours}</Text>
+          <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, marginTop: 2 }}>{p.hours || 'Horário não informado'}</Text>
           <View style={{ marginTop: 12, height: 8, borderRadius: 4, overflow: 'hidden', backgroundColor: C.GRAY_LT }}>
-            <View style={{ height: '100%', width: `${p.fill}%`, backgroundColor: p.fill > 80 ? C.RED : C.ORANGE, borderRadius: 4 }} />
+            <View style={{ height: '100%', width: `${p.fill}%`, backgroundColor: barColor, borderRadius: 4 }} />
           </View>
-          <Text style={{ fontFamily: F.semi, fontSize: 12, color: p.fill > 80 ? C.RED : C.ORANGE, marginTop: 4 }}>{p.fill}% da capacidade{p.fill > 80 ? ' — Coleta urgente' : ''}</Text>
+          <Text style={{ fontFamily: F.semi, fontSize: 12, color: barColor, marginTop: 4 }}>
+            {p.usedKg} kg de {p.capacityKg} kg ({p.fill}% da capacidade){p.fill > 80 ? ' — Coleta urgente' : ''}
+          </Text>
         </View>
 
         <View style={s.card}>
           <Text style={[s.label, { marginBottom: 12 }]}>Detalhes do Lote</Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
             <Text style={{ fontFamily: F.med, fontSize: 14, color: C.SLATE }}>Peso estimado</Text>
-            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.SLATE }}>450 kg</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.SLATE }}>{p.usedKg} kg</Text>
           </View>
-          {BATCH.map(([item, qty]) => (
-            <View key={item} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.BORDER }}>
-              <Text style={{ fontFamily: F.reg, fontSize: 14, color: C.MUTED }}>{item}</Text>
-              <Text style={{ fontFamily: F.semi, fontSize: 14, color: C.SLATE }}>{qty}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={{ fontFamily: F.med, fontSize: 14, color: C.SLATE }}>Capacidade do ponto</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.SLATE }}>{p.capacityKg} kg</Text>
+          </View>
+          {collected.length === 0 && (
+            <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 10 }}>
+              Nenhum material coletado neste ponto ainda.
+            </Text>
+          )}
+          {collected.map((m) => (
+            <View key={m} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.BORDER }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: MATERIAL_COLORS[m] }} />
+                <Text style={{ fontFamily: F.reg, fontSize: 14, color: C.MUTED }}>{m}</Text>
+              </View>
+              <Text style={{ fontFamily: F.semi, fontSize: 14, color: C.SLATE }}>{p.materials[m]} kg</Text>
             </View>
           ))}
+          {!!p.items.length && (
+            <View style={{ borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 10, marginTop: 4 }}>
+              <Text style={[s.label, { marginBottom: 6 }]}>Materiais aceitos no ponto</Text>
+              <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.MUTED, lineHeight: 18 }}>{p.items.join(' · ')}</Text>
+            </View>
+          )}
         </View>
 
         <View style={{ gap: 8 }}>

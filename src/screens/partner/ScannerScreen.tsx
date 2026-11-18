@@ -5,7 +5,10 @@ import { BackBtn, Btn, useTopPad } from '../../components/ui';
 import { validateQr } from '../../services/api';
 import { C, F } from '../../theme';
 
-
+/**
+ * Leitura de QR Code com a câmera (expo-camera).
+ * Não existe no protótipo — foi adicionada para atender ao requisito de recurso nativo.
+ */
 export default function ScannerScreen({ onBack }: { onBack: () => void }) {
   const top = useTopPad();
   const [permission, requestPermission] = useCameraPermissions();

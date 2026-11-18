@@ -8,8 +8,9 @@ import {
 import AuthScreen from './src/screens/AuthScreen';
 import ClientApp from './src/screens/client/ClientApp';
 import CoopApp from './src/screens/coop/CoopApp';
-import PartnerDashboard from './src/screens/partner/PartnerDashboard';
-import { setAuthToken } from './src/services/api';
+import PartnerApp from './src/screens/partner/PartnerApp';
+import { setAuthToken, setSessionUser } from './src/services/api';
+import { initStore } from './src/services/store';
 import { clearSession, loadSession, saveSession } from './src/services/session';
 import { C } from './src/theme';
 import { AppUser } from './src/types';
@@ -17,26 +18,39 @@ import { AppUser } from './src/types';
 export default function App() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold });
   const [user, setUser] = useState<AppUser | null>(null);
+  const [token, setToken] = useState<string | undefined>();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    loadSession().then((s) => {
+    initStore().then(loadSession).then((s) => {
       if (s) {
+        setSessionUser(s.user.email);
         setAuthToken(s.token);
+        setToken(s.token);
         setUser(s.user);
       }
       setReady(true);
     });
   }, []);
 
-  async function handleLogin(u: AppUser, token?: string) {
-    setAuthToken(token);
+  async function handleLogin(u: AppUser, t?: string) {
+    setSessionUser(u.email);
+    setAuthToken(t);
+    setToken(t);
+    setUser(u);
+    await saveSession({ user: u, token: t });
+  }
+
+  async function handleUserChange(u: AppUser) {
+    setSessionUser(u.email);
     setUser(u);
     await saveSession({ user: u, token });
   }
 
   async function handleLogout() {
+    setSessionUser(undefined);
     setAuthToken(undefined);
+    setToken(undefined);
     setUser(null);
     await clearSession();
   }
@@ -54,9 +68,9 @@ export default function App() {
       <StatusBar style="dark" />
       <View style={{ flex: 1, backgroundColor: C.BG }}>
         {!user && <AuthScreen onLogin={handleLogin} />}
-        {user?.role === 'client' && <ClientApp user={user} onLogout={handleLogout} />}
+        {user?.role === 'client' && <ClientApp user={user} onLogout={handleLogout} onUserChange={handleUserChange} />}
         {user?.role === 'coop' && <CoopApp user={user} onLogout={handleLogout} />}
-        {user?.role === 'partner' && <PartnerDashboard user={user} onLogout={handleLogout} />}
+        {user?.role === 'partner' && <PartnerApp user={user} onLogout={handleLogout} />}
       </View>
     </SafeAreaProvider>
   );
